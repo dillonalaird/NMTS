@@ -164,9 +164,8 @@ class NMTS(object):
                     beam_probs = next_beam_probs
                     state      = self._stack_state(state, topk[:,0], beam)
 
-                #import ipdb; ipdb.set_trace()
-                #if all([idxs[-1] == _EOS for idxs in beam_idxs]):
-                #    break
+                if all([idxs[-1] == _EOS for idxs in beam_idxs]):
+                    break
 
             best_beam = beam_idxs[np.argmax(beam_probs)]
             sample = []

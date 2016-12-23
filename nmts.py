@@ -70,11 +70,9 @@ class NMTS(object):
         targets = tf.split(1, self.max_length, self.y)[1:]
         weights = tf.unpack(tf.sequence_mask(self.y_len - 1, self.max_length - 1,
                                              dtype=tf.float32), None, 1)
-        self.probs = tf.exp(self.log_probs)
-        predictions = tf.reduce_max(self.probs, [2])
+        probs = tf.exp(self.log_probs)
         gleu = self.gleu_score(logits, targets)
-        loss_rl = tf.reduce_sum([gleu*tf.squeeze(pred, [1]) for pred in
-                                 tf.split(1, self.max_length, predictions)][:-1], 0)
+        loss_rl = self.loss_rl(probs, gleu)
         loss_ml = tf.nn.seq2seq.sequence_loss(logits, targets, weights)
         self.loss = self.alpha*loss_ml + loss_rl
         self.optim = tf.contrib.layers.optimize_loss(self.loss, None,
@@ -82,6 +80,13 @@ class NMTS(object):
                 summaries=["learning_rate", "loss", "gradient_norm"])
         tf.initialize_all_variables().run()
         self.saver = tf.train.Saver()
+
+    def loss_rl(self, probs, glue):
+        max_probs = tf.reduce_max(probs, [2])
+        loss_rl = tf.reduce_sum([glue*tf.squeeze(prob, [1]) for prob in
+                                 tf.split(1, self.max_length, max_probs)][:-1], 0)
+        batch_size = tf.cast(tf.shape(loss_rl)[0], tf.float32)
+        return tf.reduce_sum(loss_rl, 0)/batch_size
 
     def gleu_score(self, logits, truth, N=4):
         # TODO: not accounting for actual prediction/target lengths

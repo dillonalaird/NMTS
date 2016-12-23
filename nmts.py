@@ -73,7 +73,7 @@ class NMTS(object):
         self.probs = tf.exp(self.log_probs)
         predictions = tf.reduce_max(self.probs, [2])
         gleu = self.gleu_score(logits, targets)
-        loss_rl = tf.reduce_sum([gleu*tf.squeeze(prob, [1]) for prob in
+        loss_rl = tf.reduce_sum([gleu*tf.squeeze(pred, [1]) for pred in
                                  tf.split(1, self.max_length, predictions)][:-1], 0)
         loss_ml = tf.nn.seq2seq.sequence_loss(logits, targets, weights)
         self.loss = self.alpha*loss_ml + loss_rl

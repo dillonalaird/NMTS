@@ -52,12 +52,12 @@ class small:
 
 
 class large:
-    source_data_path       = "data/train.source.en.en.tokenized"
-    target_data_path       = "data/train.target.fr.de.tokenized"
-    valid_source_data_path = "data/valid.source.en.en.tokenized"
-    valid_target_data_path = "data/valid.target.fr.de.tokenized"
-    test_source_data_path  = "data/test.source.en.en.tokenized"
-    test_target_data_path  = "data/test.target.fr.de.tokenized"
+    source_data_path       = "data/train.source.en.fr.tokenized"
+    target_data_path       = "data/train.target.en.de.tokenized"
+    valid_source_data_path = "data/valid.source.en.fr.tokenized"
+    valid_target_data_path = "data/valid.target.en.de.tokenized"
+    test_source_data_path  = "data/testS.source.en.fr.tokenized.pruned"
+    test_target_data_path  = "data/testS.target.en.de.tokenized.pruned"
     vocab_path             = "data/vocab.pkl"
 
 

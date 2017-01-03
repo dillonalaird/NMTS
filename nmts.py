@@ -70,45 +70,12 @@ class NMTS(object):
         targets = tf.split(1, self.max_length, self.y)[1:]
         weights = tf.unpack(tf.sequence_mask(self.y_len - 1, self.max_length - 1,
                                              dtype=tf.float32), None, 1)
-        probs = tf.exp(self.log_probs)
-        gleu = self.gleu_score(logits, targets)
-        loss_rl = self.loss_rl(probs, gleu)
-        loss_ml = tf.nn.seq2seq.sequence_loss(logits, targets, weights)
-        self.loss = self.alpha*loss_ml + loss_rl
+        self.loss = tf.nn.seq2seq.sequence_loss(logits, targets, weights)
         self.optim = tf.contrib.layers.optimize_loss(self.loss, None,
                 self.lr, self.optimizer, clip_gradients=self.g_clip,
                 summaries=["learning_rate", "loss", "gradient_norm"])
         tf.initialize_all_variables().run()
         self.saver = tf.train.Saver()
-
-    def loss_rl(self, probs, glue):
-        max_probs = tf.reduce_max(probs, [2])
-        loss_rl = tf.reduce_sum([glue*tf.squeeze(prob, [1]) for prob in
-                                 tf.split(1, self.max_length, max_probs)][:-1], 0)
-        batch_size = tf.cast(tf.shape(loss_rl)[0], tf.float32)
-        return tf.reduce_sum(loss_rl, 0)/batch_size
-
-    def gleu_score(self, logits, truth, N=4):
-        # TODO: not accounting for actual prediction/target lengths
-        predictions = [tf.cast(tf.argmax(logit, 1), tf.int32) for logit in logits]
-        truth       = [tf.squeeze(t, [1]) for t in truth]
-        p_ngrams = []
-        t_ngrams = []
-        for n in xrange(1, N + 1):
-            p_ngrams.append([predictions[i:i+n] for i in xrange(len(predictions) - n + 1)])
-            t_ngrams.append([truth[i:i+n] for i in xrange(len(truth) - n + 1)])
-
-        equals = []
-        for n in xrange(N):
-            equal = tf.equal(p_ngrams[n], t_ngrams[n])
-            # foldl initializes array of True
-            equal = tf.foldl(lambda acc, x: tf.logical_and(acc, x),
-                             tf.split(1, n + 1, equal))
-            equal = tf.cast(tf.squeeze(equal, [1]), tf.int32)
-            equals.append(equal)
-
-        equals = tf.concat(0, equals)
-        return tf.cast(tf.reduce_sum(equals, 0), tf.float32)/equals.get_shape()[0].value
 
     def _stack_state(self, state, order, beam):
         new_state = []

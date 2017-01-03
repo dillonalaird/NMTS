@@ -48,18 +48,33 @@ class NMTS(object):
         self.y_len = tf.placeholder(tf.int32, [None], name="y_len")
 
         initializer = tf.random_normal_initializer(0.0, stddev=0.01)
-        with tf.variable_scope("NMTS", initializer=initializer):
-            self.build_model()
 
-    def build_model(self):
+        if self.optimizer == "SGD":
+            opt = tf.train.GradientDescentOptimizer(self.lr)
+        else:
+            raise ValueError("Optimizer not found: {}".format(self.optimizer))
+        grads = []
+        #with tf.variable_scope("NMTS", initializer=initializer) as nmts_scope:
+        #    for i in xrange(self.num_gpus):
+        #        with tf.device("/gpu:{}".format(i)):
+        #            loss = self.loss(x, y, x_len, y_len)
+        #            tf.get_variable_scope().reuse_variables()
+        #            grads.append(opt.compute_gradients(loss))
+        #            summaries = tf.get_collection(tf.GraphKeys.SUMMARIES, nmts_scope)
+
+        #grads = self.average_gradients(grads)
+
+        self.loss(self.x, self.y, self.x_len, self.y_len)
+
+    def loss(self, x, y, x_len, y_len):
         self.encoder_hs, state = nmts_encoder(self.num_layers, self.s_nwords,
-                                             self.h_dim, self.x, sequence_length=self.x_len)
+                                             self.h_dim, x, sequence_length=x_len)
         cell = NMTSDecoderCell([tf.nn.rnn_cell.LSTMCell(self.h_dim)]*self.num_layers,
                                attention=self.attention)
         self.initial_state = nmts_states_projection(state)
         logits, state = nmts_decoder_attention(cell, self.t_nwords, self.h_dim,
-                                               self.t_nwords, self.y, self.encoder_hs,
-                                               sequence_length=self.y_len,
+                                               self.t_nwords, y, self.encoder_hs,
+                                               sequence_length=y_len,
                                                initial_state=self.initial_state)
         self.decoder_state = state[0]
 
@@ -74,12 +89,13 @@ class NMTS(object):
         gleu = self.gleu_score(logits, targets)
         loss_rl = self.loss_rl(probs, gleu)
         loss_ml = tf.nn.seq2seq.sequence_loss(logits, targets, weights)
-        self.loss = self.alpha*loss_ml + loss_rl
-        self.optim = tf.contrib.layers.optimize_loss(self.loss, None,
-                self.lr, self.optimizer, clip_gradients=self.g_clip,
-                summaries=["learning_rate", "loss", "gradient_norm"])
-        tf.initialize_all_variables().run()
-        self.saver = tf.train.Saver()
+        return self.alpha*loss_ml + loss_rl
+        #self.loss = self.alpha*loss_ml + loss_rl
+        #self.optim = tf.contrib.layers.optimize_loss(self.loss, None,
+        #        self.lr, self.optimizer, clip_gradients=self.g_clip,
+        #        summaries=["learning_rate", "loss", "gradient_norm"])
+        #tf.initialize_all_variables().run()
+        #self.saver = tf.train.Saver()
 
     def loss_rl(self, probs, glue):
         max_probs = tf.reduce_max(probs, [2])
@@ -87,6 +103,18 @@ class NMTS(object):
                                  tf.split(1, self.max_length, max_probs)][:-1], 0)
         batch_size = tf.cast(tf.shape(loss_rl)[0], tf.float32)
         return tf.reduce_sum(loss_rl, 0)/batch_size
+
+    def average_gradients(self, grads):
+        average_grads = []
+        for gvs in zip(*grads):
+            grads = []
+            for g, _ in gvs:
+                grads.append(tf.expand_dims(g, 0))
+            grad = tf.reduce_mean(tf.concat(0, grads), 0)
+            v = gvs[0][1]
+            gv = (grad, v)
+            average_grads.append(gv)
+        return average_grads
 
     def gleu_score(self, logits, truth, N=4):
         # TODO: not accounting for actual prediction/target lengths
@@ -100,15 +128,27 @@ class NMTS(object):
 
         equals = []
         for n in xrange(N):
-            equal = tf.equal(p_ngrams[n], t_ngrams[n])
-            # foldl initializes array of True
-            equal = tf.foldl(lambda acc, x: tf.logical_and(acc, x),
-                             tf.split(1, n + 1, equal))
-            equal = tf.cast(tf.squeeze(equal, [1]), tf.int32)
-            equals.append(equal)
+            for i, p_ngram in enumerate(p_ngrams[n]):
+                equal = tf.foldl(lambda acc, x: tf.logical_or(acc, tf.equal(x, p_ngram)),
+                                 t_ngrams[n][:i] + t_ngrams[n][(i+1):],
+                                 initializer=tf.cast(tf.zeros_like(p_ngram), tf.bool))
+                equal = tf.foldl(lambda acc, x: tf.logical_and(acc, x),
+                                 tf.split(0, n + 1, equal))
+                equals.append(equal)
 
-        equals = tf.concat(0, equals)
-        return tf.cast(tf.reduce_sum(equals, 0), tf.float32)/equals.get_shape()[0].value
+        print("stop")
+
+        #equals = []
+        #for n in xrange(N):
+        #    equal = tf.equal(p_ngrams[n], t_ngrams[n])
+        #    # foldl initializes array of True
+        #    equal = tf.foldl(lambda acc, x: tf.logical_and(acc, x),
+        #                     tf.split(1, n + 1, equal))
+        #    equal = tf.cast(tf.squeeze(equal, [1]), tf.int32)
+        #    equals.append(equal)
+
+        #equals = tf.concat(0, equals)
+        #return tf.cast(tf.reduce_sum(equals, 0), tf.float32)/equals.get_shape()[0].value
 
     def _stack_state(self, state, order, beam):
         new_state = []
